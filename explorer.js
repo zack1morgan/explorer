@@ -2,28 +2,33 @@
 console.log("STARTED...");
 
 var logElement;
+var playerUsername;
 var initialPlacementMade = false;
 var initialPlacementDoneMessage = "Giving out starting resources";
-var placeInitialSettlementSnippet = "turn to place";
+var placeInitialSettlementSnippet = "placed a";
+var startingResourcesSnippet = "received starting resources:";
 var receivedResourcesSnippet = "got:";
 var builtSnippet = "built a";
 var boughtSnippet = " bought ";
 var tradeBankGaveSnippet = "gave bank:";
 var tradeBankTookSnippet = "and took";
-var stoleAllOfSnippet = "stole all of";
+var stoleAllOfSnippet = "stole ";
 var discardedSnippet = "discarded";
-var tradedWithSnippet = " traded with: ";
+var tradedWithSnippet = " with: ";
+var tradedSnippet = " traded: ";
 var tradeWantsToGiveSnippet = "wants to give:";
 var tradeGiveForSnippet = "for:";
-var stoleFromYouSnippet = "stole:";
-var stoleFromSnippet = " stole  from: "; // extra space from icon
+var stoleFromYouSnippet = "You stole:";
+var youStoleSnippet = "from you";
+var stoleFromSnippet = " stole:  from "; // extra space from icon
+var robberSnippet = " moved robber to"
 
 var wood = "wood";
 var stone = "stone";
 var wheat = "wheat";
 var brick = "brick";
 var sheep = "sheep";
-var resourceTypes = [wood, stone, wheat, brick, sheep];
+var resourceTypes = [wood, brick, sheep, wheat, stone];
 
 // Players
 var players = [];
@@ -70,6 +75,18 @@ function calculateTheftForPlayerAndResource(player, resourceType) {
         }
         if (theft.who.targetPlayer === player) {
             return -theft.what[resourceType] || 0;
+        }
+        return 0;
+    }).reduce((a, b) => a + b, 0);
+}
+
+function calculateTheftForPlayer(player) {
+    return thefts.map(theft => {
+        if (theft.who.stealingPlayer === player) {
+            return 1;
+        }
+        if (theft.who.targetPlayer === player) {
+            return -1;
         }
         return 0;
     }).reduce((a, b) => a + b, 0);
@@ -150,6 +167,12 @@ function render() {
         resourceHeaderCell.className = "explorer-tbl-cell";
         resourceHeaderCell.innerHTML = getResourceImg(resourceType);
     }
+    var theftsHeaderCell = headerRow.insertCell(resourceTypes.length + 1);
+    theftsHeaderCell.innerHTML = "Thefts";
+    theftsHeaderCell.className = "explorer-tbl-cell";
+    var totalHeaderCell = headerRow.insertCell(resourceTypes.length + 2);
+    totalHeaderCell.innerHTML = "Total";
+    totalHeaderCell.className = "explorer-tbl-cell";
     
     var tblBody = tbl.createTBody();
     // Row per player
@@ -170,6 +193,15 @@ function render() {
                 ? "" + resources[player][resourceType] 
                 : `${cellCount} (${cellCount + theftCount})`;
         }
+        var theftCell = row.insertCell(resourceTypes.length + 1);
+        theftCell.className = "explorer-tbl-cell";
+        var thefts = calculateTheftForPlayer(player)
+        theftCell.innerHTML = "" + thefts;
+        var totalCell = row.insertCell(resourceTypes.length + 2);
+        totalCell.className = "explorer-tbl-cell";
+        var totalResources = Object.values(resources[player]).reduce((acc, x) => acc + x, 0) 
+                            + thefts;
+        totalCell.innerHTML = "" + totalResources;
     }
 
     // put <table> in the <body>
@@ -181,12 +213,12 @@ function render() {
 /**
 * Process a "got resource" message: [user icon] [user] got: ...[resource images]
 */
-function parseGotMessage(pElement) {
+function parseGotMessageHelper(pElement, snippet) {
     var textContent = pElement.textContent;
-    if (!textContent.includes(receivedResourcesSnippet)) {
+    if (!textContent.includes(snippet)) {
         return;
     }
-    var player = textContent.replace(receivedResourcesSnippet, "").split(" ")[0];
+    var player = textContent.replace(snippet, "").split(" ")[0];
     if (!resources[player]) {
         console.log("Failed to parse player...", player, resources);
         return;
@@ -205,6 +237,11 @@ function parseGotMessage(pElement) {
             resources[player][wheat] += 1;
         }
     }
+}
+
+
+function parseGotMessage(pElement) {
+    parseGotMessageHelper(pElement, receivedResourcesSnippet)
 }
 
 /**
@@ -314,12 +351,23 @@ function stealAllOfResource(receivingPlayer, resource) {
     }
 }
 
+/* 
+*  [user] stole [number]: [resource]
+*/
+function isMonopoly(text) {
+    arr = text.replace(":", "").split(" ");
+    if (arr[1] === stoleAllOfSnippet && !isNaN(parseInt(arr[2]))) {
+        return true;
+    }
+    return false;
+}
+
 /**
- * Parse monopoly card ("stole all of" some resource): [user] used [monopoly icon] & stole all of: [resource icon]
+ * Parse monopoly card
  */
 function parseStoleAllOfMessage(pElement) {
     var textContent = pElement.textContent;
-    if (!textContent.includes(stoleAllOfSnippet)) {
+    if (!isMonopoly(textContent)) {
         return;
     }
     var player = textContent.split(" ")[0];
@@ -387,7 +435,7 @@ function parseTradedMessage(pElement, prevElement) {
     if (!textContent.includes(tradedWithSnippet)) {
         return;
     }
-    var tradingPlayer = textContent.split(tradedWithSnippet)[0];
+    var tradingPlayer = textContent.split(tradedSnippet)[0];
     var agreeingPlayer = textContent.split(tradedWithSnippet)[1];
     if (!resources[tradingPlayer] || !resources[agreeingPlayer]) {
         console.log("Failed to parse player...", tradingPlayer, agreeingPlayer, pElement.textContent, prevElement.textContent, resources);
@@ -425,18 +473,25 @@ function parseTradedMessage(pElement, prevElement) {
     }
 }
 
+function isKnownSteal(textContent) {
+    return textContent.includes(stoleFromYouSnippet) || textContent.includes(youStoleSnippet)
+}
+
 /**
- * Message T-1: [stealingPlayer] stole [resource] from: [targetPlayer]
- * Message T: [stealingPlayer] stole: [resource]
+ * Message T-1: [stealingPlayer] moved robber to [number] [resource]
+ * Message T: [stealingPlayer] stole: [resource] from [targetPlayer]
  */
 function parseStoleFromYouMessage(pElement, prevElement) {
     var textContent = pElement.textContent;
-    if (!textContent.includes(stoleFromYouSnippet)) {
+    if (!isKnownSteal(textContent)) {
         return;
     }
-    var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
-    var stealingPlayer = involvedPlayers[0];
-    var targetPlayer = involvedPlayers[1];
+    // var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
+    var stealingPlayer = involvedPlayers = prevElement.textContent.replace(robberSnippet, " ").split(" ")[0];
+    var targetPlayer = pElement.textContent.split(" ").slice(-1)[0];
+    if (stealingPlayer !== playerUsername) {
+        targetPlayer = playerUsername;
+    }
     if (!resources[stealingPlayer] || !resources[targetPlayer]) {
         console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
         return;
@@ -466,15 +521,13 @@ function parseStoleUnknownMessage(pElement, prevElement) {
         return;
     }
     var messageT = pElement.textContent;
-    var messageTMinus1 = prevElement.textContent;
-    var matches = !messageT.includes(stoleFromYouSnippet) && messageTMinus1.includes(stoleFromSnippet);
-    if (!matches) {
+    if (!messageT.includes("stole") || isKnownSteal(messageT)) {
         return;
     }
     // figure out the 2 players
-    var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
+    var involvedPlayers = messageT.split(" ");
     var stealingPlayer = involvedPlayers[0];
-    var targetPlayer = involvedPlayers[1];
+    var targetPlayer = involvedPlayers.slice(-1)[0];
     if (!resources[stealingPlayer] || !resources[targetPlayer]) {
         console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
         return;
@@ -595,6 +648,17 @@ var ALL_PARSERS = [
     parseStoleUnknownMessage,
 ];
 
+function checkValidResourceCount() {
+    for([playerName, resourceDict] of Object.entries(resources)) {
+        for ([resource, count] of Object.entries(resourceDict)) {
+            if (count < 0) {
+                console.log(`${playerName} has ${count} of ${resource}`);
+            }
+
+        }
+    }
+}
+
 /**
  * Parses the latest messages and re-renders the table.
  */
@@ -602,12 +666,15 @@ function parseLatestMessages() {
     var allMessages = getAllMessages();
     var newOffset = allMessages.length;
     var newMessages = allMessages.slice(MSG_OFFSET);
+    if (newMessages.length == 0)
+        return;
     ALL_PARSERS.forEach(parser => newMessages.forEach((msg, idx) => {
         var prevMessage = idx > 0 ? newMessages[idx - 1] : allMessages[MSG_OFFSET - 1];
         parser(msg, prevMessage);
     }));
     MSG_OFFSET = newOffset;
     reviewThefts();
+    checkValidResourceCount();
     render();
 }
 
@@ -621,7 +688,8 @@ function startWatchingMessages() {
 function tallyInitialResources() {
     var allMessages = getAllMessages();
     MSG_OFFSET = allMessages.length;
-    allMessages.forEach(parseGotMessage);
+    allMessages.forEach(pElement => parseGotMessageHelper(pElement, startingResourcesSnippet));
+    allMessages.forEach(pElement => parseGotMessage(pElement));
     deleteDiscordSigns();
     render();
     deleteDiscordSigns(); // idk why but it takes 2 runs to delete both signs
@@ -632,8 +700,8 @@ function tallyInitialResources() {
 * Once initial settlements are placed, determine the players.
 */
 function recognizeUsers() {
-    var placementMessages = getAllMessages()
-    .filter(msg => msg.textContent.includes(placeInitialSettlementSnippet));
+    var allMessages = getAllMessages();
+    var placementMessages = allMessages.filter(msg => msg.textContent.includes(placeInitialSettlementSnippet));
     console.log("total placement messages", placementMessages.length);
     for (var msg of placementMessages) {
         msg_text = msg.textContent;
@@ -690,7 +758,7 @@ function waitForInitialPlacement() {
             loadCounter();
         } else {
             var messages = Array.prototype.slice.call(logElement.children).map(p => p.textContent);
-            if (messages.some(m => m === initialPlacementDoneMessage)) {
+            if (messages.some(m => m.includes("rolled"))) {
                 initialPlacementMade = true;
             }
         }
@@ -712,5 +780,17 @@ function findTranscription() {
     }, 500);
 }
 
+function findPlayerName() {
+    var interval = setInterval(() => {
+        if (playerUsername) {
+            console.log("player name loaded...");
+            clearInterval(interval);
+            playerUsername = playerUsername.textContent
+        } else {
+            playerUsername = document.getElementById("header_profile_username")//document.getElementById("game-log-text");
+        }
+    }, 500);
+}
 
+findPlayerName();
 findTranscription();
