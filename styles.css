@@ -7,7 +7,7 @@
 
 #explorer-tbl {
     position: absolute;
-    background-color: white;
+    background-color: #1d1d1d;
     z-index: 9999;
     top: 10px;
     left: 10px;
@@ -29,8 +29,8 @@
     height: 3em;
 }
 
-.explorer-tbl-row:nth-child(2n-1) { background-color: #eeeeee; }
-.explorer-tbl-row:nth-child(2n) { background-color: #f9f9f9; }
+.explorer-tbl-row:nth-child(2n-1) { background-color: rgb(36, 36, 36); }
+.explorer-tbl-row:nth-child(2n) { background-color: #1d1d1d; }
 
 .explorer-tbl-cell {
     border: none;
