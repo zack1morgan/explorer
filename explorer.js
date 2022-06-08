@@ -40,11 +40,19 @@ var resources = {};
 // Message offset
 var MSG_OFFSET = 0;
 
-// Thefts - transactions from when the robber is placed and stolen resource is unknown 
-var thefts = [];
-// Thefts - once the unknown resources are accounted for
-var solved_thefts = [];
+const zeros = [0, 0, 0, 0, 0];
+const zero_deltas = [zeros, zeros, zeros, zeros];
+// Unknow theft potential deltas
 
+function deep_copy_2d_array(array) {
+    return array.map(sub_array => Array.from(sub_array));
+}
+potential_state_deltas = [];
+
+
+function LogFailedToParse(...players) {
+    console.log("Failed to parse player...", ...players, resources);
+}
 
 // First, delete the discord signs
 function deleteDiscordSigns() {
@@ -69,27 +77,31 @@ function deleteDiscordSigns() {
  * i.e. if 1 card was potentially stolen, return 1.
  */
 function calculateTheftForPlayerAndResource(player, resourceType) {
-    return thefts.map(theft => {
-        if (theft.who.stealingPlayer === player) {
-            return theft.what[resourceType] || 0;
+    var result = new Set();
+    const playerIndex = players.indexOf(player);
+    const resourceIndex = resourceTypes.indexOf(resourceType);
+    for (var potential_state_delta of potential_state_deltas) {
+        var diff = potential_state_delta[playerIndex][resourceIndex];
+        if (diff !== 0) {
+            result.add(diff);
         }
-        if (theft.who.targetPlayer === player) {
-            return -theft.what[resourceType] || 0;
-        }
-        return 0;
-    }).reduce((a, b) => a + b, 0);
+    }
+    return Array.from(result);
 }
 
 function calculateTheftForPlayer(player) {
-    return thefts.map(theft => {
-        if (theft.who.stealingPlayer === player) {
-            return 1;
-        }
-        if (theft.who.targetPlayer === player) {
-            return -1;
-        }
-        return 0;
-    }).reduce((a, b) => a + b, 0);
+    if (potential_state_deltas.length === 0) {
+        return [[0], [0]];
+    }
+    const playerIndex = players.indexOf(player);
+
+    theftsBy = potential_state_deltas.map(potential_state_delta => 
+               potential_state_delta[playerIndex].filter(x => x > 0).reduce((a, b) => a + b, 0));
+    theftsFrom = potential_state_deltas.map(potential_state_delta =>
+                 potential_state_delta[playerIndex].filter(x => x < 0).reduce((a, b) => a + b, 0));
+    
+    
+    return [Array.from(new Set(theftsBy)), Array.from(new Set(theftsFrom))];
 }
 
 function getResourceImg(resourceType) {
@@ -132,11 +144,21 @@ function shouldRenderTable(...deps) {
     return true;
 }
 
+/*
+function getTotalDeltas() {
+    if (potential_state_deltas.length === 0)
+        return deep_copy_2d_array(zero_deltas);
+    
+    var result = potential_state_deltas.reduce(add_array_of_arrays);
+    return result;
+}
+*/
+
 /**
 * Renders the table with the counts.
 */
 function render() {
-    if (!shouldRenderTable(resources, thefts)) {
+    if (!shouldRenderTable(resources, potential_state_deltas)) {
         return;
     }
 
@@ -167,14 +189,18 @@ function render() {
         resourceHeaderCell.className = "explorer-tbl-cell";
         resourceHeaderCell.innerHTML = getResourceImg(resourceType);
     }
-    var theftsHeaderCell = headerRow.insertCell(resourceTypes.length + 1);
-    theftsHeaderCell.innerHTML = "Thefts";
-    theftsHeaderCell.className = "explorer-tbl-cell";
-    var totalHeaderCell = headerRow.insertCell(resourceTypes.length + 2);
+    var theftsByHeaderCell = headerRow.insertCell(resourceTypes.length + 1);
+    theftsByHeaderCell.innerHTML = "Thefts +";
+    theftsByHeaderCell.className = "explorer-tbl-cell";
+    var theftsFromHeaderCell = headerRow.insertCell(resourceTypes.length + 2);
+    theftsFromHeaderCell.innerHTML = "Thefts -";
+    theftsFromHeaderCell.className = "explorer-tbl-cell";
+    var totalHeaderCell = headerRow.insertCell(resourceTypes.length + 3);
     totalHeaderCell.innerHTML = "Total";
     totalHeaderCell.className = "explorer-tbl-cell";
     
     var tblBody = tbl.createTBody();
+
     // Row per player
     for (var i = 0; i < players.length; i++) {
         var player = players[i];
@@ -188,19 +214,33 @@ function render() {
             cell.className = "explorer-tbl-cell";
             var resourceType = resourceTypes[j];
             var cellCount = resources[player][resourceType];
-            var theftCount = calculateTheftForPlayerAndResource(player, resourceType);
-            cell.innerHTML = theftCount === 0 
-                ? "" + resources[player][resourceType] 
-                : `${cellCount} (${cellCount + theftCount})`;
+            var theftSet = calculateTheftForPlayerAndResource(player, resourceType);
+            cell.innerHTML = theftSet.length === 0 
+                ? "" + cellCount
+                : `${cellCount} (${theftSet})`;
         }
-        var theftCell = row.insertCell(resourceTypes.length + 1);
-        theftCell.className = "explorer-tbl-cell";
-        var thefts = calculateTheftForPlayer(player)
-        theftCell.innerHTML = "" + thefts;
-        var totalCell = row.insertCell(resourceTypes.length + 2);
+        var [theftBy, theftFrom]  = calculateTheftForPlayer(player)
+        var theftByCell = row.insertCell(resourceTypes.length + 1);
+        theftByCell.className = "explorer-tbl-cell";
+        theftByCell.innerHTML = theftBy.length === 1
+            ? "" + theftBy
+            : `(${theftBy})`;
+
+        var theftFromCell = row.insertCell(resourceTypes.length + 2);
+        theftFromCell.className = "explorer-tbl-cell";
+        theftFromCell.innerHTML = theftFrom.length === 1
+        ? "" + theftFrom
+        : `(${theftFrom})`;
+
+        var totalCell = row.insertCell(resourceTypes.length + 3);
         totalCell.className = "explorer-tbl-cell";
-        var totalResources = Object.values(resources[player]).reduce((acc, x) => acc + x, 0) 
-                            + thefts;
+        var totalResources = Object.values(resources[player]).reduce((acc, x) => acc + x, 0);
+        if (theftBy.length !== 0) {
+            totalResources += theftBy[0];
+        }
+        if (theftFrom.length !== 0) {
+            totalResources += theftFrom[0];
+        }
         totalCell.innerHTML = "" + totalResources;
     }
 
@@ -209,6 +249,7 @@ function render() {
     // tbl border attribute to 
     tbl.setAttribute("border", "2");
 }
+
 
 /**
 * Process a "got resource" message: [user icon] [user] got: ...[resource images]
@@ -220,7 +261,7 @@ function parseGotMessageHelper(pElement, snippet) {
     }
     var player = textContent.replace(snippet, "").split(" ")[0];
     if (!resources[player]) {
-        console.log("Failed to parse player...", player, resources);
+        LogFailedToParse(player);
         return;
     }
     var images = collectionToArray(pElement.getElementsByTagName('img'));
@@ -255,7 +296,7 @@ function parseBuiltMessage(pElement) {
     var images = collectionToArray(pElement.getElementsByTagName('img'));
     var player = textContent.split(" ")[0];
     if (!resources[player]) {
-        console.log("Failed to parse player...", player, resources);
+        LogFailedToParse(player);
         return;
     }
     for (var img of images) {
@@ -285,7 +326,7 @@ function parseBoughtMessage(pElement) {
     var images = collectionToArray(pElement.getElementsByTagName('img'));
     var player = textContent.split(" ")[0];
     if (!resources[player]) {
-        console.log("Failed to parse player...", player, resources);
+        LogFailedToParse(player);
         return;
     }
     for (var img of images) {
@@ -307,7 +348,7 @@ function parseTradeBankMessage(pElement) {
     }
     var player = textContent.split(" ")[0];
     if (!resources[player]) {
-        console.log("Failed to parse player...", player, resources);
+        LogFailedToParse(player);
         return;
     }
     // We have to split on the text, which isn't wrapped in tags, so we parse innerHTML, which prints the HTML and the text.
@@ -372,7 +413,7 @@ function parseStoleAllOfMessage(pElement) {
     }
     var player = textContent.split(" ")[0];
     if (!resources[player]) {
-        console.log("Failed to parse player...", player, resources);
+        LogFailedToParse(player);
         return;
     }
     var images = collectionToArray(pElement.getElementsByTagName('img'));
@@ -402,7 +443,7 @@ function parseDiscardedMessage(pElement) {
     }
     var player = textContent.replace(receivedResourcesSnippet, "").split(" ")[0];
     if (!resources[player]) {
-        console.log("Failed to parse player...", player, resources);
+        LogFailedToParse(player);
         return;
     }
     var images = collectionToArray(pElement.getElementsByTagName('img'));
@@ -438,7 +479,7 @@ function parseTradedMessage(pElement, prevElement) {
     var tradingPlayer = textContent.split(tradedSnippet)[0];
     var agreeingPlayer = textContent.split(tradedWithSnippet)[1];
     if (!resources[tradingPlayer] || !resources[agreeingPlayer]) {
-        console.log("Failed to parse player...", tradingPlayer, agreeingPlayer, pElement.textContent, prevElement.textContent, resources);
+        LogFailedToParse(tradingPlayer, agreeingPlayer, pElement.textContent, prevElement.textContent);
         return;
     }
     // We have to split on the text, which isn't wrapped in tags, so we parse innerHTML, which prints the HTML and the text.
@@ -487,13 +528,18 @@ function parseStoleFromYouMessage(pElement, prevElement) {
         return;
     }
     // var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
-    var stealingPlayer = involvedPlayers = prevElement.textContent.replace(robberSnippet, " ").split(" ")[0];
-    var targetPlayer = pElement.textContent.split(" ").slice(-1)[0];
-    if (stealingPlayer !== playerUsername) {
+    var splitText = textContent.split(" ");
+    var stealingPlayer = splitText[0]
+    var targetPlayer = splitText.slice(-1)[0];
+    if (stealingPlayer === "You") {
+        stealingPlayer = playerUsername;
+    }
+    if (targetPlayer === "you") {
         targetPlayer = playerUsername;
     }
+
     if (!resources[stealingPlayer] || !resources[targetPlayer]) {
-        console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
+        LogFailedToParse(stealingPlayer, targetPlayer);
         return;
     }
     var images = collectionToArray(pElement.getElementsByTagName('img'));
@@ -510,6 +556,13 @@ function parseStoleFromYouMessage(pElement, prevElement) {
             transferResource(targetPlayer, stealingPlayer, wheat);
         }
     }
+}
+
+function add_array_of_arrays(array0, array1) {
+
+    return array0.map((row, outer_index) => 
+        row.map((element, inner_index) => array1[outer_index][inner_index] + element)
+        );
 }
 
 /**
@@ -529,38 +582,98 @@ function parseStoleUnknownMessage(pElement, prevElement) {
     var stealingPlayer = involvedPlayers[0];
     var targetPlayer = involvedPlayers.slice(-1)[0];
     if (!resources[stealingPlayer] || !resources[targetPlayer]) {
-        console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
+        LogFailedToParse(stealingPlayer, targetPlayer);
         return;
     }
     // for the player being stolen from, (-1) on all resources that are non-zero
     // for the player receiving, (+1) for all resources that are non-zero FOR THE OTHER PLAYER
     // record the unknown and wait for it to surface
-    theft = {
-        who: {
-            stealingPlayer,
-            targetPlayer,
-        },
-        what: {}
-    };
-    for (var resourceType of resourceTypes) {
-        if (resources[targetPlayer][resourceType] > 0) {
-            theft.what[resourceType] = 1;
+
+    var stealingPlayerIndex = players.indexOf(stealingPlayer);
+    var targetPlayerIndex = players.indexOf(targetPlayer);
+    
+    var potential_deltas = [];
+    for (const index of resourceTypes.keys()) {
+        var temp = deep_copy_2d_array(zero_deltas)
+        temp[stealingPlayerIndex][index] = 1;
+        temp[targetPlayerIndex][index] = -1;
+        potential_deltas.push(temp)
+    }
+    
+    potential_state_deltas = (potential_state_deltas.length === 0
+        ? [deep_copy_2d_array(zero_deltas)]
+        : potential_state_deltas
+        ).flatMap(potential_accumulated_delta => 
+        potential_deltas.map(potential_delta =>
+            add_array_of_arrays(potential_delta, potential_accumulated_delta)));
+}
+function getIndices(predicate, delta) {
+    for (var [outer_index, player_delta] of delta.entries()) {
+        var inner_index = player_delta.findIndex(predicate);
+        if (inner_index >= 0) {
+            return [outer_index, inner_index];
         }
     }
-    var resourceTypesPotentiallyStolen = Object.keys(theft.what);
-    if (resourceTypesPotentiallyStolen.length === 0) {
-        // nothing could have been stolen
-        return;
-    }
-    if (resourceTypesPotentiallyStolen.length === 1) {
-        // only 1 resource could have been stolen, so it's not an unknown
-        transferResource(targetPlayer, stealingPlayer, resourceTypesPotentiallyStolen[0]);
-    } else {
-        // we can't be sure, so record the unknown
-        thefts.push(theft);
-    }
+    throw Error("no entry satisfies getIndices predicate");
 }
 
+function areAnyNegative(arrayOfArrays) {
+    for (let row of arrayOfArrays) {
+        for (let element of row) {
+            if (element < 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function areAllZero(arrayOfArrays) {
+    for (let row of arrayOfArrays) {
+        for (let element of row) {
+            if (element !== 0) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+function shouldKeep(potential_resources, delta) {
+    if (areAnyNegative(potential_resources) || areAllZero(delta)) {
+        return false;
+    }
+    return true;
+}
+
+function playerResourcesToArray(playerResourcesDict) {
+    var result = [];
+    for (const resource of resourceTypes) {
+        result.push(playerResourcesDict[resource]);
+    }
+    return result;
+}
+
+function resourcesToDict(resourcesArray) {
+    var result = {};
+    for (const [playerIndex, playerResources] of resourcesArray) {
+        var playerResourceDict = {};
+        for (const [resourceIndex, resourceAmount] of playerResources) {
+            playerResourceDict[resourceTypes[resourceIndex]] = resourceAmount;
+        }
+
+        dict[players[playerIndex]] = playerResourceDict;
+    }
+    return result;
+}
+
+function resourcesToArray(resourcesDict) {
+    var result = [];
+    for (const player of players) {
+        result.push(playerResourcesToArray(resourcesDict[player]));
+    }
+    return result;
+}
 /**
  * See if thefts can be solved based on current resource count.
  * Rules:
@@ -570,70 +683,26 @@ function parseStoleUnknownMessage(pElement, prevElement) {
  *     - if there's only 1 resource left, we know what was stolen in another instance.
  */
 function reviewThefts() {
-    for (var player of players) {
-        for (var resourceType of resourceTypes) {
-            var resourceCount = resources[player][resourceType];
-            var theftCount = calculateTheftForPlayerAndResource(player, resourceType);
-            var total = resourceCount + theftCount;
-            if (total < -1) {
-                throw Error('Invalid state', resourceType, player, resourceCount, theftCount, resources);
-            }
-            // the player stole a resource and spent it
-            if (resourceCount === -1 && total === 0) {
-                for (var i = 0; i < thefts.length; i++) {
-                    if (thefts[i].who.stealingPlayer === player && !!thefts[i].what[resourceType]) {
-                        transferResource(thefts[i].who.targetPlayer, player, resourceType);
-                        thefts[i].solved = true;
-                    }
-                }
-            }
-            // the player had a resource stolen and the stealer spent it (?)
-            if (resourceCount === 0 && total === -1) {
-                for (var i = 0; i < thefts.length; i++) {
-                    if (thefts[i].who.targetPlayer === player && !!thefts[i].what[resourceType]) {
-                        delete thefts[i].what[resourceType];
-                        console.log("Theft possibilities reduced!", thefts[i], resourceType);
-                        
-                        var remainingResourcePossibilities = Object.keys(thefts[i].what);
-                        if (remainingResourcePossibilities.length === 1) {
-                            transferResource(
-                                thefts[i].who.targetPlayer, 
-                                thefts[i].who.stealingPlayer, 
-                                remainingResourcePossibilities[0]
-                            );
-                            thefts[i].solved = true;
-                            console.log("Theft solved!", thefts[i]);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
+    const resourcesArray = resourcesToArray(resources);
+    const before_len = potential_state_deltas.length;
+    potential_state_deltas_temp = potential_state_deltas.filter(delta =>
+        shouldKeep(add_array_of_arrays(resourcesArray, delta), delta)
+        );
+    if (potential_state_deltas_temp.length !== potential_state_deltas.length) {
+        var xxx = 0;
     }
-    // Remove if we can solve based on there being no resources of that type in play
-    for (var resourceType of resourceTypes) {
-        var resourceTotalInPlay = Object.values(resources).map(r => r[resourceType]).reduce((a, b) => a + b, 0);
-        if (resourceTotalInPlay === 0) {
-            for (var i = 0; i < thefts.length; i++) {
-                if (thefts[i].solved) {
-                    continue;
-                }
-                delete thefts[i].what[resourceType];
-                var remainingOptions = Object.keys(thefts[i].what);
-                if (remainingOptions === 1) {
-                    transferResource(
-                        thefts[i].who.targetPlayer, 
-                        thefts[i].who.stealingPlayer, 
-                        remainingOptions[0]
-                    );
-                    thefts[i].solved = true;
-                }
-            }
+    potential_state_deltas = potential_state_deltas_temp
+
+    if (potential_state_deltas.length === 1) {
+        const actual_resources_delta = potential_state_deltas[0];
+        const actual_resources = add_array_of_arrays(actual_resources_delta, resourcesArray)
+        if (areAnyNegative(actual_resources)) {
+            throw Error("Couldn't resolve thefts correctly");
         }
+        resources_temp = resourcesToDict(actual_resources);
+        resources = resources_temp;
+        potential_state_deltas = [];
     }
-    // Removed any solved thefts.
-    solved_thefts = solved_thefts.concat(thefts.filter(t => t.solved));
-    thefts = thefts.filter(t => !t.solved);
 }
 
 var ALL_PARSERS = [
@@ -674,7 +743,7 @@ function parseLatestMessages() {
     }));
     MSG_OFFSET = newOffset;
     reviewThefts();
-    checkValidResourceCount();
+    //checkValidResourceCount();
     render();
 }
 
