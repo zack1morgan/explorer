@@ -16,12 +16,13 @@ var stoleAllOfSnippet = "stole ";
 var discardedSnippet = "discarded";
 var tradedWithSnippet = " with: ";
 var tradedSnippet = " traded: ";
-var tradeWantsToGiveSnippet = "wants to give:";
+//var tradeWantsToGiveSnippet = "wants to give:";
 var tradeGiveForSnippet = "for:";
 var stoleFromYouSnippet = "You stole:";
 var youStoleSnippet = "from you";
 var stoleFromSnippet = " stole:  from "; // extra space from icon
 var robberSnippet = " moved robber to"
+var yearOfPleantlySnippet = "took from bank"
 
 var wood = "wood";
 var stone = "stone";
@@ -190,10 +191,10 @@ function render() {
         resourceHeaderCell.innerHTML = getResourceImg(resourceType);
     }
     var theftsByHeaderCell = headerRow.insertCell(resourceTypes.length + 1);
-    theftsByHeaderCell.innerHTML = "Thefts +";
+    theftsByHeaderCell.innerHTML = "+";
     theftsByHeaderCell.className = "explorer-tbl-cell";
     var theftsFromHeaderCell = headerRow.insertCell(resourceTypes.length + 2);
-    theftsFromHeaderCell.innerHTML = "Thefts -";
+    theftsFromHeaderCell.innerHTML = "-";
     theftsFromHeaderCell.className = "explorer-tbl-cell";
     var totalHeaderCell = headerRow.insertCell(resourceTypes.length + 3);
     totalHeaderCell.innerHTML = "Total";
@@ -338,6 +339,37 @@ function parseBoughtMessage(pElement) {
     }
 }
 
+
+
+/**
+ * "[user] took from bank: [resource]
+ */
+ function parseYearOfPleantyMessage(pElement) {
+    var textContent = pElement.textContent; 
+    if (!textContent.includes(yearOfPleantlySnippet)) {
+        return;
+    }
+    var player = textContent.split(" ")[0];
+    var images = collectionToArray(pElement.getElementsByTagName('img'));
+    if (!resources[player]) {
+        LogFailedToParse(player);
+        return;
+    }
+    for (var img of images) {
+        if (img.src.includes("card_wool")) {
+            resources[player][sheep] += 1;
+        } else if (img.src.includes("card_lumber")) {
+            resources[player][wood] += 1;
+        } else if (img.src.includes("card_brick")) {
+            resources[player][brick] += 1;
+        } else if (img.src.includes("card_ore")) {
+            resources[player][stone] += 1; 
+        } else if (img.src.includes("card_grain")) {
+            resources[player][wheat] += 1;
+        }
+    }
+ }
+
 /**
  * Process a trade with the bank message: [user icon] [user] gave bank: ...[resources] and took ...[resources]
  */
@@ -397,7 +429,7 @@ function stealAllOfResource(receivingPlayer, resource) {
 */
 function isMonopoly(text) {
     arr = text.replace(":", "").split(" ");
-    if (arr[1] === stoleAllOfSnippet && !isNaN(parseInt(arr[2]))) {
+    if (arr[1] === "stole" && !isNaN(parseInt(arr[2]))) {
         return true;
     }
     return false;
@@ -483,8 +515,8 @@ function parseTradedMessage(pElement, prevElement) {
         return;
     }
     // We have to split on the text, which isn't wrapped in tags, so we parse innerHTML, which prints the HTML and the text.
-    var innerHTML = prevElement.innerHTML; // on the trade description msg
-    var wantstogive = innerHTML.slice(innerHTML.indexOf(tradeWantsToGiveSnippet), innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
+    var innerHTML = pElement.innerHTML; // on the trade description msg
+    var wantstogive = innerHTML.slice(/*innerHTML.indexOf(tradeWantsToGiveSnippet)*/0, innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
     var givefor = innerHTML.slice(innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
     for (var imgStr of wantstogive) {
         if (imgStr.includes("card_wool")) {
@@ -574,7 +606,7 @@ function parseStoleUnknownMessage(pElement, prevElement) {
         return;
     }
     var messageT = pElement.textContent;
-    if (!messageT.includes("stole") || isKnownSteal(messageT)) {
+    if (!messageT.includes("stole") || isKnownSteal(messageT) || isMonopoly(messageT)) {
         return;
     }
     // figure out the 2 players
@@ -656,13 +688,13 @@ function playerResourcesToArray(playerResourcesDict) {
 
 function resourcesToDict(resourcesArray) {
     var result = {};
-    for (const [playerIndex, playerResources] of resourcesArray) {
+    for (const [playerIndex, playerResources] of resourcesArray.entries()) {
         var playerResourceDict = {};
-        for (const [resourceIndex, resourceAmount] of playerResources) {
+        for (const [resourceIndex, resourceAmount] of playerResources.entries()) {
             playerResourceDict[resourceTypes[resourceIndex]] = resourceAmount;
         }
 
-        dict[players[playerIndex]] = playerResourceDict;
+        result[players[playerIndex]] = playerResourceDict;
     }
     return result;
 }
@@ -688,8 +720,11 @@ function reviewThefts() {
     potential_state_deltas_temp = potential_state_deltas.filter(delta =>
         shouldKeep(add_array_of_arrays(resourcesArray, delta), delta)
         );
-    if (potential_state_deltas_temp.length !== potential_state_deltas.length) {
-        var xxx = 0;
+    
+    if (potential_state_deltas_temp.length === 0) {
+        if (areAnyNegative(resourcesArray)) {
+            console.error("Couldn't resolve thefts correctly");
+        }
     }
     potential_state_deltas = potential_state_deltas_temp
 
@@ -710,6 +745,7 @@ var ALL_PARSERS = [
     parseBuiltMessage,
     parseBoughtMessage,
     parseTradeBankMessage,
+    parseYearOfPleantyMessage,
     parseStoleAllOfMessage,
     parseDiscardedMessage,
     parseTradedMessage,
@@ -728,6 +764,9 @@ function checkValidResourceCount() {
     }
 }
 
+function zip(x, y) {
+    return Array.from(Array(Math.max(x.length, y.length)), (_, i) => [x[i], y[i]]);
+}
 /**
  * Parses the latest messages and re-renders the table.
  */
@@ -737,13 +776,14 @@ function parseLatestMessages() {
     var newMessages = allMessages.slice(MSG_OFFSET);
     if (newMessages.length == 0)
         return;
-    ALL_PARSERS.forEach(parser => newMessages.forEach((msg, idx) => {
-        var prevMessage = idx > 0 ? newMessages[idx - 1] : allMessages[MSG_OFFSET - 1];
-        parser(msg, prevMessage);
-    }));
+
+    prevMessages = allMessages.slice(MSG_OFFSET - 1, -1);
+
+    for (const [message, prevMessage] of zip(newMessages, prevMessages)) {
+        ALL_PARSERS.forEach(parser => parser(message, prevMessage));
+        reviewThefts();
+    }
     MSG_OFFSET = newOffset;
-    reviewThefts();
-    //checkValidResourceCount();
     render();
 }
 
