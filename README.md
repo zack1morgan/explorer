@@ -47,6 +47,6 @@ Also the theme has been changed to dark mode to work with the dark reader plugin
 
 # Debugging
 
-Open the console in developer tools, and view the explorer.js script, setting a breakpoint at the end of the render function. Run the code and compare the plugin computed total resources form the total resource cards displayed in game at each render update.
+Open the console in developer tools, and view the explorer.js script, setting a breakpoint at the end of the render function. Play a game against bots, run the code and compare the plugin computed total resources form the total resource cards displayed in game at each render update.
 
 There still is a bug when parsing messages. To debug this plugin properly you would need to extract the resource card counts from the game, and then compare with the plugin computed resources
