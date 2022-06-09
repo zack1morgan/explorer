@@ -13,7 +13,7 @@ has 2 of that resource, unless they stole one of that resource, in which case th
 **Note that Explorer will not run unless it's left open for the entire game.** Refreshing or reconnecting to the
 game will clear the transaction log, making it impossible to re-calculate the player resource distribution.
 
-Feel free to report any bug and/or PR a fix!
+<strike>Feel free to report any bug and/or PR a fix!</strike> Will not be maintaining, fork this please.
  
 
 # Instructions
