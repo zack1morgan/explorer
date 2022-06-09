@@ -723,7 +723,8 @@ function reviewThefts() {
     
     if (potential_state_deltas_temp.length === 0) {
         if (areAnyNegative(resourcesArray)) {
-            console.error("Couldn't resolve thefts correctly");
+            getAllMessages().map(x => x.textContent).slice(-100);
+            console.error("Couldn't resolve thefts correctly. There almost certianly is a bug parsing messages");
         }
     }
     potential_state_deltas = potential_state_deltas_temp
