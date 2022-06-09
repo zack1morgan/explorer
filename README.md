@@ -27,7 +27,7 @@ Feel free to report any bug and/or PR a fix!
 # Ethics
 Is this ethical?
 
-I was interested in exploring the importance of card counting in Catan for sciencific motivations. I believe the persuite of science is blind to ethics and is not socially constructed but emergent from instincts.
+I was interested in exploring the importance of card counting in Catan for sciencific motivations. I believe the pursuit of science is blind to ethics and is not socially constructed but emergent from instincts.
 
 Only information from the chat is used, which is avaliable to everyone. So this can be seen as and aid. The ethics of aids in online games is work for moral philosphers and users not programmers.
 
