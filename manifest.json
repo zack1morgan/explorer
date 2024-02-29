@@ -1,7 +1,7 @@
 {
     "name": "Colonist Resource Tracker",
     "short_name": "Colonist Resource Tracker",
-    "manifest_version": 2,
+    "manifest_version": 3,
     "author": "Hugh Zabriskie",
     "description": "Players of Catan on colonist.io can track who has which resources",
     "version": "0.0.1",
